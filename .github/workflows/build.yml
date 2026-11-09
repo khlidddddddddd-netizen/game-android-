@@ -20,13 +20,20 @@ jobs:
           npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8
           npx cap init "Tani Musim" com.bakha.tanimusim --web-dir www
           npx cap add android
+          mkdir assets
+          cp icon-only.png icon-foreground.png icon-background.png splash.png splash-dark.png assets/
+          npx @capacitor/assets generate --android
           npx cap sync android
-      - name: Build AAB
+      - name: Build AAB dan APK uji
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew bundleRelease
+          ./gradlew bundleRelease assembleDebug
       - uses: actions/upload-artifact@v4
         with:
           name: tani-musim-aab
           path: android/app/build/outputs/bundle/release/*.aab
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tani-musim-apk-uji
+          path: android/app/build/outputs/apk/debug/*.apk
