@@ -1,0 +1,32 @@
+name: Build AAB
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Siapkan proyek
+        run: |
+          mkdir www
+          cp index.html www/index.html
+          npm init -y
+          npm install @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8
+          npx cap init "Tani Musim" com.namaadek.tanimusim --web-dir www
+          npx cap add android
+          npx cap sync android
+      - name: Build AAB
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew bundleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tani-musim-aab
+          path: android/app/build/outputs/bundle/release/*.aab
