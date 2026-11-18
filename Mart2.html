@@ -701,11 +701,13 @@ async function push(force){
  if(MODE!='on'||!me||pushing)return;const now=Date.now();if(!force&&now-lastPush<8000)return;
  pushing=true;lastPush=now;dirty=false;const{fs,db}=X,ref=fs.doc(db,'saves',me.uid);
  try{const data=JSON.stringify(snap()),sm=summary();
-  const r=await fs.runTransaction(db,async tx=>{const s=await tx.get(ref),d=s.exists()?s.data():null;if(d&&d.by=='admin'&&d.rev>rev)return{adm:d};tx.set(ref,{data,rev:rev+1,by:'player',updatedAt:fs.serverTimestamp()});return{}});
+  const r=await fs.runTransaction(db,async tx=>{const s=await tx.get(ref),d=s.exists()?s.data():null;if(d&&d.by=='admin'&&d.rev>rev)return{adm:d};tx.set(ref,{data,money:Math.max(0,Math.floor(sm.money)),lv:Math.round(sm.level),rev:rev+1,by:'player',updatedAt:fs.serverTimestamp()});return{}});
   if(r.adm)remote(r.adm);else{rev++;cache={data,rev};await fs.updateDoc(fs.doc(db,'users',me.uid),Object.assign(sm,{lastSeen:fs.serverTimestamp(),online:true}))}
-  lastOk=Date.now()}catch(e){dirty=true}
+  lastOk=Date.now()}catch(e){if(e.code=='permission-denied')await rollback();else dirty=true}
  pushing=false;badge()}
-function remote(d){rev=d.rev;cache=d;apply(JSON.parse(d.data));toast('Admin memperbarui tokomu')}
+function clamp(d){if(d&&typeof d.money=='number'&&!(prof&&prof.infinity)&&G.M>d.money+1)G.M=d.money}
+async function rollback(){try{const s=await X.fs.getDoc(X.fs.doc(X.db,'saves',me.uid));if(s.exists()){const d=s.data();rev=d.rev||0;cache=d;apply(JSON.parse(d.data));clamp(d);toast('Perubahan uang ditolak server, data dikembalikan')}}catch(e){dirty=true}}
+function remote(d){rev=d.rev;cache=d;apply(JSON.parse(d.data));clamp(d);toast('Admin memperbarui tokomu')}
 
 /* ---- Firebase init ---- */
 async function init(){if(X)return X;if(FB.apiKey.indexOf('ISI')==0)throw Error('Firebase belum dikonfigurasi (isi FB di kode)');
@@ -716,7 +718,7 @@ async function init(){if(X)return X;if(FB.apiKey.indexOf('ISI')==0)throw Error('
 let gate;
 function gmsg(t){const e=$$('mo_gm');if(e)e.textContent=t||''}
 function showGate(note){if(gate)gate.remove();const u=X&&X.auth.currentUser;
- gate=el(`<div class="mo_c"><h2>Mini Market</h2><button class="mo_b mo_f mo_g" id="mo_off">Main Offline (tanpa internet)</button><div class="mo_s">Data disimpan di perangkat ini, terpisah dari data online.</div><hr style="opacity:.2;margin:12px 0"><h3>Main Online (v2)</h3><div id="mo_on"></div><div id="mo_gm" class="mo_s" style="color:#ffb4b4;margin-top:6px">${esc(note||'')}</div></div>`,'mo_w');
+ gate=el(`<div class="mo_c"><h2>Mini Market</h2><button class="mo_b mo_f mo_g" id="mo_off">Main Offline (tanpa internet)</button><div class="mo_s">Data disimpan di perangkat ini, terpisah dari data online.</div><hr style="opacity:.2;margin:12px 0"><h3>Main Online (v4)</h3><div id="mo_on"></div><div id="mo_gm" class="mo_s" style="color:#ffb4b4;margin-top:6px">${esc(note||'')}</div></div>`,'mo_w');
  $$('mo_off').onclick=()=>{MODE='off';gate.remove();gate=null;toast('Mode Offline')};
  const on=$$('mo_on');
  if(u){on.innerHTML=`<button class="mo_b mo_f mo_p" id="mo_go">Lanjut online: ${esc(u.displayName||u.email||'akun')}</button><button class="mo_b mo_f" id="mo_lo">Ganti akun</button>`;$$('mo_go').onclick=startOnline;$$('mo_lo').onclick=async()=>{await X.au.signOut(X.auth);showGate()}}
@@ -734,7 +736,7 @@ async function startOnline(){
   prof=us.data();if(prof.suspended){await X.au.signOut(X.auth);return showGate('Akun ditangguhkan oleh admin')}
   isAdm=(await fs.getDoc(fs.doc(db,'admins',u.uid))).exists();
   const ss=await fs.getDoc(fs.doc(db,'saves',u.uid));me=u;MODE='on';gate.remove();gate=null;$$('nw').style.display='none';mo=0;
-  if(ss.exists()){cache=ss.data();rev=cache.rev||0;apply(JSON.parse(cache.data));toast('Data online dimuat')}else{cache=null;rev=0;resetAll()}
+  if(ss.exists()){cache=ss.data();rev=cache.rev||0;apply(JSON.parse(cache.data));clamp(cache);toast('Data online dimuat')}else{cache=null;rev=0;resetAll()}
   act('login',pv);
   unsubs.push(fs.onSnapshot(uref,s=>{if(!s.exists())return;prof=s.data();if(prof.suspended&&MODE!='spec'){MODE=null;X.au.signOut(X.auth).then(()=>location.reload())}}));
   unsubs.push(fs.onSnapshot(fs.doc(db,'saves',u.uid),s=>{const d=s.data();if(d&&MODE=='on'&&d.by=='admin'&&d.rev>rev)remote(d)}));
@@ -788,7 +790,7 @@ async function detail(uid){const{fs,db}=X,u=admUsers.find(x=>x.id==uid)||{};let 
  B(8,async()=>{const v=!u.suspended;if(!confirm((v?'Tangguhkan ':'Aktifkan ')+nm+'?'))return;await fs.updateDoc(fs.doc(db,'users',uid),{suspended:v});await alog(uid,nm,v?'tangguhkan':'aktifkan','')});
  B(9,async()=>{const t=await prm('Ketik nama pemain ('+nm+') untuk MENGHAPUS data toko & profil. Tidak bisa dibatalkan.','');if(t!==nm)throw Error('Nama tidak cocok, dibatalkan');await fs.deleteDoc(fs.doc(db,'saves',uid));await fs.deleteDoc(fs.doc(db,'users',uid));await alog(uid,nm,'hapus_data','')})}
 async function edit(uid,fn,act2,nm,det){const{fs,db}=X,ref=fs.doc(db,'saves',uid),uref=fs.doc(db,'users',uid);let sm;
- await fs.runTransaction(db,async tx=>{const s=await tx.get(ref);if(!s.exists())throw Error('Pemain belum punya data');const d=s.data(),o=JSON.parse(d.data);fn(o);sm=sumOf(o);tx.set(ref,{data:JSON.stringify(o),rev:(d.rev||0)+1,by:'admin',updatedAt:fs.serverTimestamp()})});
+ await fs.runTransaction(db,async tx=>{const s=await tx.get(ref);if(!s.exists())throw Error('Pemain belum punya data');const d=s.data(),o=JSON.parse(d.data);fn(o);sm=sumOf(o);tx.set(ref,{data:JSON.stringify(o),money:Math.max(0,Math.floor(o.G.M)),lv:Math.round(o.G.lv),rev:(d.rev||0)+1,by:'admin',updatedAt:fs.serverTimestamp()})});
  await fs.updateDoc(uref,sm);await alog(uid,nm,act2,det)}
 async function alog(uid,nm,a,d){const{fs,db}=X;await fs.addDoc(fs.collection(db,'adminLog'),{at:fs.serverTimestamp(),actor:me.uid,actorName:prof.username,target:uid,targetName:nm,action:a,detail:d})}
 async function logs(){const{fs,db}=X,a=await fs.getDocs(fs.query(fs.collection(db,'adminLog'),fs.orderBy('at','desc'),fs.limit(100)));$$('mo_ab').innerHTML=a.docs.map(d=>{const v=d.data();return`<div class="mo_i"><b>${esc(v.action)}</b> → ${esc(v.targetName)} ${esc(v.detail)}<div class="mo_s">${esc(v.actorName)} · ${ms(v.at)?new Date(ms(v.at)).toLocaleString('id-ID'):''}</div></div>`}).join('')||'<div class="mo_s">Belum ada tindakan.</div>'}
